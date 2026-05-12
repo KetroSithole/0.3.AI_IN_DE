@@ -8,7 +8,16 @@ import pandas as pd
 import streamlit as st
 
 
-DATA_FILE = Path(__file__).with_name("pc_data.csv")
+def get_data_file() -> Path:
+    base = Path(__file__).parent
+    for name in ["pc_data.csv", "pc_data_public.csv"]:
+        p = base / name
+        if p.exists():
+            return p
+    return base / "pc_data_public.csv"
+
+
+DATA_FILE = get_data_file()
 
 
 def _to_numeric(series: pd.Series) -> pd.Series:
@@ -80,6 +89,25 @@ def prep_data(df: pd.DataFrame) -> pd.DataFrame:
         out["profit_after_repairs"] = out["gross_profit"] - repairs.fillna(0)
     else:
         out["profit_after_repairs"] = pd.NA
+
+    # Ratios (use numeric versions if present)
+    if sale is not None and discount is not None:
+        denom = sale.replace({0: pd.NA})
+        out["discount_rate"] = (discount.fillna(0) / denom).clip(lower=0)
+    else:
+        out["discount_rate"] = pd.NA
+
+    if out.get("net_sale") is not None and out.get("gross_profit") is not None:
+        denom = pd.to_numeric(out["net_sale"], errors="coerce").replace({0: pd.NA})
+        num = pd.to_numeric(out["gross_profit"], errors="coerce")
+        out["margin_rate"] = (num / denom)
+    else:
+        out["margin_rate"] = pd.NA
+
+    if "Payment Method" in out.columns:
+        out["is_financed"] = out["Payment Method"].astype(str).str.lower().eq("finance")
+    else:
+        out["is_financed"] = False
 
     # Shipping lead time
     out["ship_days"] = (out["ship_date"] - out["purchase_date"]).dt.days
